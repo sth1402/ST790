@@ -1,0 +1,98 @@
+---
+title: "ST790 Single Decision Point Methods"
+output: html_document
+date: "2025-02-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(package = "DynTxRegime")
+library(rpart)
+```
+
+## Toy Dataset
+
+Load Data
+
+```{r}
+urlfile <- 'https://raw.githubusercontent.com/sth1402/ST790/refs/heads/main/st790Data.txt'
+df <- read.csv(file = urlfile, header = TRUE)
+```
+
+```{r}
+summary(object = df)
+```
+
+## Outcome Regression (Q-Learning)
+
+```{r}
+moMain <- buildModelObj(model = ~x1+x2,
+                        solver.method = 'lm',
+                        predict.method = 'predict.lm')
+
+moCont <- buildModelObj(mode = ~x2+x3,
+                        solver.method = 'lm',
+                        predict.method = 'predict.lm')
+
+qObj <- qLearn(moMain = moMain, moCont = moCont, iter = 0L,
+               data = df, response = df$y, txName = 'A',
+               verbose = TRUE)
+```
+
+## Value Search
+
+
+```{r}
+moPropen <- buildModelObj(model = ~ 1,
+                          solver.method = 'glm',
+                          solver.args = list(family = 'binomial'),  
+                          predict.args = list(type = 'response'))
+
+moMain <- buildModelObj(model = ~ x1 + x2, solver.method = 'lm')
+moCont <- buildModelObj(model = ~ x2 + x3, solver.method = 'lm')
+
+regimes <- function(eta1, eta2, data) {
+             d1 <- {data$x1 < eta1} & {data$x3 < eta2}
+             return( as.integer(x = d1) )
+            }
+
+vsObj <- optimalSeq(moPropen = moPropen,
+                    moMain = moMain, moCont = moCont,
+                    data = df, response = df$y, txName = 'A',
+                    regimes = regimes, 
+                    Domains = matrix(data = c(-10,-10,10,10), ncol = 2L),
+                    starting.values = c(0,0), pop.size = 500)
+```
+
+## Classification
+
+```{r}
+moPropen <- buildModelObj(model = ~ 1,
+                          solver.method = 'glm',
+                          solver.args = list(family = 'binomial'),  
+                          predict.args = list(type = 'response'))
+
+moMain <- buildModelObj(model = ~ x1 + x2, solver.method = 'lm')
+moCont <- buildModelObj(model = ~ x2 + x3, solver.method = 'lm')
+
+moClass <- buildModelObj(model = ~x1 + x2 + x3,
+                         solver.method = 'rpart',
+                         predict.args = list(type = "class"))
+
+clObj <- optimalClass(moPropen = moPropen,
+                      moMain = moMain, moCont = moCont,
+                      moClass = moClass,
+                      data = df, response = df$y, txName = 'A')
+```
+
+
+
+## Outcome Weighted Learning
+
+
+```{r}
+owlObj <- owl(moPropen = moPropen, data = df, reward = df$y,
+              txName = "A", regime = ~x1 + x2 + x3,
+              lambdas = 0.01, kernel = "linear", surrogate = "sqhinge")
+```
+
