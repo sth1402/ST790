@@ -30,7 +30,7 @@ moMain <- buildModelObj(model = ~x1+x2,
                         solver.method = 'lm',
                         predict.method = 'predict.lm')
 
-moCont <- buildModelObj(mode = ~x2+x3,
+moCont <- buildModelObj(model = ~x2+x3,
                         solver.method = 'lm',
                         predict.method = 'predict.lm')
 
