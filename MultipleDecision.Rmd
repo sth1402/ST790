@@ -1,0 +1,382 @@
+---
+title: "Follow Along - Multiple Decision Points"
+author: "Shannon T. Holloway"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(DynTxRegime)
+```
+
+## Toy Dataset
+
+```{r}
+df <- read.csv(file = "st790Data.MD.csv", header = TRUE)
+summary(object = df)
+
+dfHold <- df
+df[is.na(df)] <- 0.0
+```
+
+```{r}
+fSet1 <- function(data) {
+  list("subsets" = list(list("fs", c("A","B"))),
+       "txOpts" = rep("fs", times = nrow(x = data)))
+}
+
+fSet2 <- function(A1, r1) {
+  list("subsets" = list(list("A_1", c("A")),
+                        list("A_0", c("B", "C")),
+                        list("B_1", c("B")),
+                        list("B_0", c("A", "C"))),
+       "txOpts" = paste(A1, r1, sep = "_"))
+}
+```
+
+```{r}
+result <- fSet1(data = df)
+
+print(result$subsets)
+
+print(table(result$txOpts))
+```
+
+```{r}
+result <- fSet2(A1 = df$A1, r1 = df$r1)
+
+print(result$subsets)
+```
+
+```{r}
+result <- fSet2(A1 = df$A1, r1 = df$r1)
+
+print(table(result$txOpts))
+```
+
+```{r}
+table(df$A1, df$r1)
+```
+
+## Q-Learning
+
+```{r}
+moMain_A_0 <- buildModelObjSubset(model = ~ x01 + x02 + x11 + x12,
+                                  solver.method = 'lm',
+                                  subset = 'A_0', dp = 2L)
+
+moCont_A_0 <- buildModelObjSubset(model = ~ x11 + x12,
+                                  solver.method = 'lm',
+                                  subset = 'A_0', dp = 2L)
+
+moMain_B_0 <- buildModelObjSubset(model = ~ x01 + x11 + x13,
+                                  solver.method = 'lm',
+                                  subset = 'B_0', dp = 2L)
+
+moCont_B_0 <- buildModelObjSubset(model = ~ x11 + x13,
+                                  solver.method = 'lm',
+                                  subset = 'B_0', dp = 2L)
+
+moMain_ss <- list(moMain_A_0, moMain_B_0)
+
+moCont_ss <- list(moCont_A_0, moCont_B_0)
+
+fSet2 <- function(A1, r1) {
+  
+  list("subsets" = list(list("A_1", c("A")),
+                        list("A_0", c("B", "C")),
+                        list("B_1", c("B")),
+                        list("B_0", c("A", "C"))),
+       "txOpts" = paste(A1, r1, sep = "_"))
+  
+}
+
+qObj_ss <- qLearn(moMain = moMain_ss, moCont = moCont_ss, iter = 0L,
+                  data = df, response = df$y, txName = 'A2',
+                  fSet = fSet2, verbose = TRUE)
+```
+
+
+```{r}
+moMain_fs <- buildModelObj(model = ~ x01 + x02,
+                           solver.method = 'lm')
+
+moCont_fs <- buildModelObj(model = ~ x02,
+                           solver.method = 'lm')
+
+qObj_fs <- qLearn(moMain = moMain_fs, moCont = moCont_fs, iter = 0L,
+                  data = df, response = qObj_ss, txName = 'A1',
+                  fSet = NULL, verbose = TRUE)
+```
+
+
+```{r}
+coef(object = qObj_ss)
+```
+
+```{r}
+coef(object = qObj_fs)
+```
+
+```{r}
+fitObj <- fitObject(object = qObj_ss)
+fitObj
+```
+
+```{r}
+is(object = fitObj$outcome$'Subset=A_0'$Combined)
+```
+
+```{r}
+ot <- optTx(x = qObj_ss)
+
+names(ot)
+
+table(ot$optimalTx)
+
+head(cbind(ot$decisionFunc,ot$optimalTx))
+```
+
+
+```{r}
+estimator(x = qObj_ss)
+```
+
+```{r}
+estimator(x = qObj_fs)
+```
+
+```{r}
+ot <- optTx(x = qObj_fs)
+
+names(ot)
+
+table(ot$optimalTx)
+
+head(cbind(ot$decisionFunc, "optTX" = ot$optimalTx))
+```
+
+```{r}
+newPatient <- data.frame(x01 = c(9.3, 10.6), x02 = c(51.8, 70))
+optTx(x = qObj_fs, newdata = newPatient)
+```
+
+```{r}
+newPatient <- cbind(newPatient, 
+                    "A1" = optTx(x = qObj_fs, newdata = newPatient)$optimalTx, 
+                    "r1" = c(1,0), 
+                    x11 = c(NA,2.9), 
+                    x12 = c(NA,-.6))
+optTx(x = qObj_ss, newdata = newPatient)
+```
+
+## Value Search
+
+```{r}
+moPropen_fs <- buildModelObjSubset(model = ~ 1,
+                                   solver.method = 'glm',
+                                   solver.args = list("family" = "binomial"),
+                                   predict.args = list("type" = "response"),
+                                   subset = 'fs', dp = 1L)
+
+moPropen_A_0 <- buildModelObjSubset(model = ~ 1,
+                                    solver.method = 'glm',
+                                    solver.args = list("family" = "binomial"),
+                                    predict.args = list("type" = "response"),
+                                    subset = 'A_0', dp = 2L)
+
+moPropen_B_0 <- buildModelObjSubset(model = ~ 1,
+                                    solver.method = 'glm',
+                                    solver.args = list("family" = "binomial"),
+                                    predict.args = list("type" = "response"),
+                                    subset = 'B_0', dp = 2L)
+```
+
+```{r}
+moMain_fs <- buildModelObjSubset(model = ~ x01 + x02,
+                                  solver.method = 'lm',
+                                  subset = 'fs', dp = 1L)
+
+moCont_fs <- buildModelObjSubset(model = ~ x02,
+                                  solver.method = 'lm',
+                                  subset = 'fs', dp = 1L)
+```
+
+```{r}
+regimes1 <- function(eta1, eta2, data) {
+  tst <- {data$x01 < eta1} & {data$x02 < eta2}
+  d1 <- c("B", "A")[tst + 1L]
+  d1
+}
+
+regimes2 <- function(eta1, eta2, eta3, eta4, data) {
+  d2 <- levels(data$A1)[data$A1]
+
+  A_0 <- {data$r1 == 0L} & {data$A1 == "A"}
+  B_0 <- {data$r1 == 0L} & {data$A1 == "B"}
+  
+  tstA <- {data$x11 < eta1} & {data$x12 < eta2}
+  tstB <- {data$x11 < eta3} & {data$x13 < eta4}
+  
+  d2[A_0] <- c("C", "B")[tstA[A_0] + 1L]
+  d2[B_0] <- c("C", "A")[tstB[B_0] + 1L]
+
+  d2
+}
+```
+
+```{r}
+etas <- c("x01", "x02", "x11", "x12", "x11", "x13")
+starting.values <- lapply(dfHold[etas], mean, na.rm = TRUE) |> unlist() |> unname()
+Domains <- matrix(data = c(lapply(dfHold[etas], min, na.rm = TRUE) |> unlist() |> unname(), 
+                           lapply(dfHold[etas], max, na.rm = TRUE) |> unlist() |> unname()), 
+                  ncol = 2L)
+pop.size <- 500 #TOO SMALL
+```
+
+
+```{r}
+vsObj <- optimalSeq(moPropen = list(moPropen_fs, moPropen_A_0, moPropen_B_0),
+                    moMain = list(moMain_fs, moMain_A_0, moMain_B_0), 
+                    moCont = list(moCont_fs, moCont_A_0, moCont_B_0), 
+                    iter = 0L,
+                    data = df, response = df$y, txName = c('A1', 'A2'),
+                    regimes = list(regimes1, regimes2), 
+                    fSet = list(fSet1, fSet2),
+                    Domains = Domains,
+                    starting.values = starting.values, 
+                    pop.size = 500,
+                    verbose = TRUE)
+```
+
+
+```{r}
+coef(object = vsObj)
+```
+
+```{r}
+fitObj <- fitObject(object = vsObj)
+print(x = fitObj)
+```
+
+```{r}
+genetic(object = vsObj)
+```
+
+```{r}
+ot <- optTx(x = vsObj)
+names(ot)
+table(ot$"dp=1"$optimalTx)
+table(ot$"dp=2"$optimalTx)
+ot$"dp=1"$decisionFunc
+regimeCoef(object = vsObj)
+```
+
+```{r}
+newPatient <- data.frame(x01 = c(9.3, 10.6), x02 = c(51.8, 70))
+optTx(x = vsObj, newdata = newPatient, dp = 1L)
+```
+
+```{r}
+newPatient <- cbind(newPatient, 
+                    "A1" = optTx(x = vsObj, newdata = newPatient, dp = 1L)$optimalTx, 
+                    "r1" = c(1,0), 
+                    x11 = c(NA,2.9), 
+                    x12 = c(NA,-.6),
+                    x13 = c(NA, NA))
+optTx(x = vsObj, newdata = newPatient, dp = 2L)
+```
+
+## Backward Outcome Weighted Learning
+
+
+```{r}
+moPropen_A_0 <- buildModelObjSubset(model = ~ 1,
+                                    solver.method = 'glm',
+                                    solver.args = list("family" = "binomial"),
+                                    predict.args = list("type" = "response"),
+                                    subset = 'A_0', dp = 2L)
+moPropen_B_0 <- buildModelObjSubset(model = ~ 1,
+                                    solver.method = 'glm',
+                                    solver.args = list("family" = "binomial"),
+                                    predict.args = list("type" = "response"),
+                                    subset = 'B_0', dp = 2L)
+
+moPropen_ss <- list(moPropen_A_0, moPropen_B_0)
+
+regime <- list("A_0" = ~ x11 + x12, "B_0" = ~x11 + x12 + x13)
+
+fSet2 <- function(A1, r1) {
+  
+  list("subsets" = list(list("A_1", c("A")),
+                        list("A_0", c("B", "C")),
+                        list("B_1", c("B")),
+                        list("B_0", c("A", "C"))),
+       "txOpts" = paste(A1, r1, sep = "_"))
+  
+}
+
+bObj_ss <- bowl(moPropen = moPropen_ss, 
+                data = df, response = df$y, txName = 'A2',
+                regime = regime, BOWLObj = NULL,
+                kernel = list("A_0"='linear',"B_0"='linear'), kparam = NULL,
+                fSet = fSet2, surrogate = 'sqhinge', verbose = TRUE)
+```
+
+```{r}
+moPropen_fs <- buildModelObj(model = ~ 1,
+                             solver.method = 'glm',
+                             solver.args = list("family" = "binomial"),
+                             predict.args = list("type" = "response"))
+
+regime <- ~ x01 + x02
+
+bObj_fs <- bowl(moPropen = moPropen_fs, 
+                data = df, response = rep(0, nrow(df)), txName = 'A1',
+                regime = regime, BOWLObj = bObj_ss,
+                kernel = 'linear', kparam = NULL,
+                fSet = NULL, surrogate = 'sqhinge', verbose = TRUE)
+```
+
+```{r}
+coef(object = bObj_ss)
+```
+
+```{r}
+coef(object = bObj_fs)
+```
+
+```{r}
+fitObj <- fitObject(object = bObj_ss)
+fitObj
+```
+
+```{r}
+ot <- optTx(x = bObj_ss)
+names(ot)
+table(ot$optimalTx)
+head(cbind(ot$decisionFunc, "optTx" = ot$optimalTx))
+estimator(x = bObj_ss)
+```
+
+```{r}
+ot <- optTx(x = bObj_fs)
+table(ot$optimalTx)
+head(cbind(ot$decisionFunc, "optTx" = ot$optimalTx))
+estimator(x = bObj_fs)
+```
+
+```{r}
+newPatient <- data.frame(x01 = c(9.3, 10.6), x02 = c(51.8, 70))
+optTx(x = bObj_fs, newdata = newPatient)
+```
+
+```{r}
+newPatient <- cbind(newPatient, 
+                    "A1" = optTx(x = bObj_fs, newdata = newPatient)$optimalTx, 
+                    "r1" = c(1,0), 
+                    "x11" = c(NA,2.9), 
+                    "x12" = c(NA,-.6),
+                    "x13" = c(NA,8))
+optTx(x = bObj_ss, newdata = newPatient)
+```
